@@ -2,8 +2,8 @@
 
 公开分发仓库：提供二进制发布资产、安装脚本和运维文档。
 
-# 项目源码
-https://github.com/iniwex5/vohive
+# 项目源码（当前维护 Fork）
+https://github.com/zhangsan-nb/vohive
 
 ## 免责声明
 
@@ -75,25 +75,25 @@ echo 'AT+QCFG="usbnet",0;+CFUN=1,1' | sudo socat - /dev/ttyUSB2,crnl
 ## 四、部署方式一：一键安装
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/iniwex5/vohive-release/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/zhangsan-nb/vohive-release/master/install.sh | sudo bash
 ```
 
 指定版本：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/iniwex5/vohive-release/master/install.sh | bash -s -- --version v1.0.0
+curl -fsSL https://raw.githubusercontent.com/zhangsan-nb/vohive-release/master/install.sh | sudo bash -s -- --version v1.5.5-10-gf9eb85d
 ```
 
 仅安装二进制（不安装 systemd）：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/iniwex5/vohive-release/master/install.sh | bash -s -- --no-systemd
+curl -fsSL https://raw.githubusercontent.com/zhangsan-nb/vohive-release/master/install.sh | sudo bash -s -- --no-systemd
 ```
 
 卸载：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/iniwex5/vohive-release/master/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/zhangsan-nb/vohive-release/master/uninstall.sh | sudo bash
 ```
 
 

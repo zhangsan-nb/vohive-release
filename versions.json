@@ -1,6 +1,6 @@
 {
-  "stable": "v1.0.0",
-  "latest": "v1.0.0",
-  "min_supported": "v1.0.0",
-  "notes_url": "https://github.com/iniwex5/vohive-release/releases"
+  "stable": "v1.5.5-10-gf9eb85d",
+  "latest": "v1.5.5-10-gf9eb85d",
+  "min_supported": "v1.5.5-10-gf9eb85d",
+  "notes_url": "https://github.com/zhangsan-nb/vohive/releases"
 }
