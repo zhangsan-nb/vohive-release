@@ -74,26 +74,176 @@ echo 'AT+QCFG="usbnet",0;+CFUN=1,1' | sudo socat - /dev/ttyUSB2,crnl
 
 ## 四、部署方式一：一键安装
 
+目前提供以下 Linux 架构的预编译二进制：
+
+- `amd64`：普通 Intel/AMD 64 位电脑、服务器和虚拟机
+- `arm64`：64 位 ARM 设备
+- `armv7`：32 位 ARM 设备
+
+安装脚本会自动识别 CPU 架构、下载对应二进制，并校验 SHA-256。
+
+### 4.1 Debian / Ubuntu：root 用户安装
+
+如果终端提示符类似 `root@debian:~#`，说明当前就是 root 用户。
+
+先安装下载工具：
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zhangsan-nb/vohive-release/master/install.sh | sudo bash
+apt-get update
+apt-get install -y curl ca-certificates
 ```
 
-指定版本：
+然后一键安装：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zhangsan-nb/vohive-release/master/install.sh | sudo bash -s -- --version v1.5.5-10-gf9eb85d
+curl -fsSL \
+  https://raw.githubusercontent.com/zhangsan-nb/vohive-release/master/install.sh \
+  | bash
 ```
 
-仅安装二进制（不安装 systemd）：
+### 4.2 Debian / Ubuntu：普通用户安装
+
+普通用户需要使用 `sudo`：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zhangsan-nb/vohive-release/master/install.sh | sudo bash -s -- --no-systemd
+sudo apt-get update
+sudo apt-get install -y curl ca-certificates
 ```
 
-卸载：
+然后安装：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zhangsan-nb/vohive-release/master/uninstall.sh | sudo bash
+curl -fsSL \
+  https://raw.githubusercontent.com/zhangsan-nb/vohive-release/master/install.sh \
+  | sudo bash
+```
+
+### 4.3 安装指定版本
+
+root 用户执行：
+
+```bash
+curl -fsSL \
+  https://raw.githubusercontent.com/zhangsan-nb/vohive-release/master/install.sh \
+  | bash -s -- --version v1.5.5-10-gf9eb85d
+```
+
+普通用户执行：
+
+```bash
+curl -fsSL \
+  https://raw.githubusercontent.com/zhangsan-nb/vohive-release/master/install.sh \
+  | sudo bash -s -- --version v1.5.5-10-gf9eb85d
+```
+
+### 4.4 安装完成后检查
+
+查看服务状态：
+
+```bash
+systemctl status vohive --no-pager
+```
+
+查看最近日志：
+
+```bash
+journalctl -u vohive -n 50 --no-pager
+```
+
+持续查看实时日志：
+
+```bash
+journalctl -u vohive -f
+```
+
+查询服务器局域网 IP：
+
+```bash
+hostname -I
+```
+
+浏览器访问：
+
+```text
+http://服务器局域网IP:7575
+```
+
+首次安装会在终端显示：
+
+- Web 用户名
+- 自动生成的随机密码
+- 可访问的后台地址
+
+请立即保存随机密码，不要将 `7575` 端口直接开放到公网。
+
+### 4.5 更新或重新安装
+
+再次执行安装命令即可。安装脚本会：
+
+- 保留现有配置和数据
+- 将旧二进制备份为 `/opt/vohive/bin/vohive.bak`
+- 下载并校验新二进制
+- 重启 VoHive 服务
+- 启动失败时尝试恢复旧二进制
+
+root 用户执行：
+
+```bash
+curl -fsSL \
+  https://raw.githubusercontent.com/zhangsan-nb/vohive-release/master/install.sh \
+  | bash
+```
+
+### 4.6 普通卸载：保留配置和数据
+
+普通卸载会删除程序和 systemd 服务，但保留配置、数据库和日志，方便以后重新安装。
+
+root 用户执行：
+
+```bash
+curl -fsSL \
+  https://raw.githubusercontent.com/zhangsan-nb/vohive-release/master/uninstall.sh \
+  | bash
+```
+
+### 4.7 彻底卸载：删除全部数据
+
+> [!CAUTION]
+> 下面的命令会永久删除 VoHive 程序、配置、数据库、短信记录和日志，无法恢复。
+
+root 用户执行：
+
+```bash
+curl -fsSL \
+  https://raw.githubusercontent.com/zhangsan-nb/vohive-release/master/uninstall.sh \
+  | bash -s -- --purge
+```
+
+卸载后确认：
+
+```bash
+test -e /opt/vohive \
+  && echo "仍有残留" \
+  || echo "VoHive 已全部删除"
+```
+
+### 4.8 不使用 systemd 的高级安装方式
+
+普通 Debian/Ubuntu 用户不需要使用此方式。
+
+仅适用于容器、部分 NAS 或没有 systemd 的 Linux：
+
+```bash
+curl -fsSL \
+  https://raw.githubusercontent.com/zhangsan-nb/vohive-release/master/install.sh \
+  | bash -s -- --no-systemd
+```
+
+安装后需要手动启动：
+
+```bash
+cd /opt/vohive
+./bin/vohive -c ./config/config.yaml
 ```
 
 
