@@ -9,7 +9,7 @@
 
 推荐 Debian、Ubuntu 或其他带 systemd 的 Linux。预编译二进制支持 `amd64`、`arm64` 和 `armv7`。
 
-# 一、创建 GitHub Token
+# 一、创建 GitHub Token（1—5 步）
 
 进入：
 
@@ -21,32 +21,74 @@ GitHub Settings
 → Generate new token
 ```
 
-按下面设置：
+## 1. 设置名称、所有者和有效期
+
+填写：
 
 ```text
 Token name: vohive-install
 Resource owner: zhangsan-nb
 Expiration: No expiration
-Repository access: Only select repositories
-  ✓ zhangsan-nb/vohive
-  ✓ zhangsan-nb/vohive-release
-Repository permissions:
-  Contents: Read-only
-  Metadata: Read-only（自动要求）
 ```
 
-操作步骤：
+![步骤 1：设置名称、所有者和 No expiration](token-step-1.png)
 
-1. `Expiration` 选择 `No expiration`。
-2. `Repository access` 选择 `Only select repositories`。
-3. 选择 `vohive` 和 `vohive-release`。
-4. 点击 `Add permissions`，添加 `Contents`。
-5. 将 `Contents` 设为 `Read-only`。
-6. 保留自动添加的 `Metadata: Read-only`。
-7. 其他权限保持 `No access`。
-8. 点击 `Generate token`，立即复制并安全保存。
+## 2. 只选择两个仓库
+
+在 `Repository access` 中选择 `Only select repositories`，然后勾选：
+
+```text
+✓ zhangsan-nb/vohive
+✓ zhangsan-nb/vohive-release
+```
+
+不要选择 `All repositories`。
+
+![步骤 2：只选择 vohive 和 vohive-release](token-step-2.png)
+
+## 3. 添加 Contents 权限
+
+在 `Permissions` 区域右侧点击：
+
+```text
++ Add permissions
+```
+
+然后选择或搜索 `Contents`，点击添加。
+
+## 4. 设置为 Read-only
+
+将 `Contents` 设置为：
+
+```text
+Contents: Read-only
+```
+
+GitHub 会自动添加：
+
+```text
+Metadata: Read-only
+```
+
+保留 `Metadata: Read-only` 即可，其他权限全部保持 `No access`。
+
+## 5. 生成 Token
+
+最终应显示：
+
+```text
+Repositories 2
+Contents        Read-only
+Metadata        Read-only
+```
+
+然后点击 `Generate token`，立即复制并安全保存。
+
+![步骤 3—5：添加 Contents、设置只读并生成 Token](token-step-3.png)
 
 `No expiration` 只是没有预定到期日。Token 仍可能因手动撤销、泄露、安全原因或账号权限变化而失效。已经运行的 VoHive 不依赖 Token；Token 失效只影响后续安装和更新。
+
+更详细的独立教程见 [`TOKEN_SETUP.md`](TOKEN_SETUP.md)。
 
 # 二、旧版是否需要卸载
 
