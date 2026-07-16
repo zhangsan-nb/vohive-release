@@ -9,6 +9,9 @@ ROOT_DIR="/opt/vohive"
 BIN_PATH="${ROOT_DIR}/bin/vohive"
 BACKUP_PATH="${ROOT_DIR}/bin/vohive.bak"
 SERVICE_PATH="/etc/systemd/system/vohive.service"
+QMI_RECOVER_SCRIPT_PATH="/usr/local/sbin/vohive-qmi-recover"
+QMI_RECOVER_SERVICE_PATH="/etc/systemd/system/vohive-qmi-recover.service"
+QMI_RECOVER_RULE_PATH="/etc/udev/rules.d/99-vohive-qmi-recover.rules"
 CONFIG_DIR="${ROOT_DIR}/config"
 DATA_DIR="${ROOT_DIR}/data"
 LOG_DIR="${ROOT_DIR}/logs"
@@ -76,10 +79,19 @@ main() {
   parse_args "$@"
 
   if command -v systemctl >/dev/null 2>&1; then
+    run_root systemctl stop vohive-qmi-recover.service || true
     run_root systemctl stop vohive || true
     run_root systemctl disable vohive || true
-    run_root rm -f "${SERVICE_PATH}"
+  fi
+
+  run_root rm -f "${SERVICE_PATH}" "${QMI_RECOVER_SERVICE_PATH}"
+  run_root rm -f "${QMI_RECOVER_SCRIPT_PATH}" "${QMI_RECOVER_RULE_PATH}"
+
+  if command -v systemctl >/dev/null 2>&1; then
     run_root systemctl daemon-reload || true
+  fi
+  if command -v udevadm >/dev/null 2>&1; then
+    run_root udevadm control --reload-rules || true
   fi
 
   run_root rm -f "${BIN_PATH}" "${BACKUP_PATH}"

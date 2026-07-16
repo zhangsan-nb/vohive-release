@@ -148,6 +148,14 @@ http://服务器局域网IP:7575
 
 再次执行一键安装命令即可。脚本会保留现有配置和数据、备份旧二进制、安装新版本并重启服务。
 
+在使用 systemd 的原生安装中，安装器还会为 Quectel EC25（USB ID `2c7c:0125`）部署 QMI 重新枚举自动恢复补丁。当 `/dev/cdc-wdm*` 消失后重新出现时，系统会等待 USB 接口稳定，再安全重启 VoHive；包含启动年龄判断和 60 秒冷却，避免开机或 USB 抖动导致重复重启。查看恢复记录：
+
+```bash
+journalctl -t vohive-qmi-recover -u vohive --since "10 minutes ago" --no-pager
+```
+
+`--no-systemd` 和 Docker 安装不会部署这项宿主机恢复服务。
+
 ### 4.6 普通卸载：保留配置和数据
 
 ```bash

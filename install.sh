@@ -21,6 +21,9 @@ LOG_DIR="${ROOT_DIR}/logs"
 BIN_PATH="${INSTALL_DIR}/vohive"
 BACKUP_PATH="${INSTALL_DIR}/vohive.bak"
 SERVICE_PATH="/etc/systemd/system/vohive.service"
+QMI_RECOVER_SCRIPT_PATH="/usr/local/sbin/vohive-qmi-recover"
+QMI_RECOVER_SERVICE_PATH="/etc/systemd/system/vohive-qmi-recover.service"
+QMI_RECOVER_RULE_PATH="/etc/udev/rules.d/99-vohive-qmi-recover.rules"
 
 TMP_DIR=""
 NEW_PASSWORD=""
@@ -359,6 +362,98 @@ CFG
   run_root install -m 0600 "${config_tmp}" "${CONFIG_DIR}/config.yaml"
 }
 
+install_qmi_recovery() {
+  local recover_script_tmp="${TMP_DIR}/vohive-qmi-recover"
+  local recover_unit_tmp="${TMP_DIR}/vohive-qmi-recover.service"
+  local recover_rule_tmp="${TMP_DIR}/99-vohive-qmi-recover.rules"
+
+  if ! command -v udevadm >/dev/null 2>&1; then
+    warn "系统没有 udevadm，跳过 EC25 QMI 重新枚举自动恢复补丁。"
+    return 0
+  fi
+
+  cat > "${recover_script_tmp}" <<'RECOVER_SCRIPT'
+#!/bin/sh
+set -eu
+
+TAG="vohive-qmi-recover"
+STAMP="/run/${TAG}.last"
+WAIT_SECONDS=15
+COOLDOWN_SECONDS=60
+MIN_SERVICE_AGE=60
+
+sleep "${WAIT_SECONDS}"
+udevadm settle --timeout=10 || true
+
+set -- /dev/cdc-wdm*
+if [ ! -e "$1" ]; then
+    logger -t "${TAG}" "未发现 cdc-wdm 设备，取消恢复"
+    exit 0
+fi
+
+if ! systemctl is-active --quiet vohive.service; then
+    logger -t "${TAG}" "VoHive 当前未运行，取消恢复"
+    exit 0
+fi
+
+ACTIVE_US="$(systemctl show vohive.service \
+    -p ActiveEnterTimestampMonotonic --value 2>/dev/null || echo 0)"
+case "${ACTIVE_US}" in
+    ''|*[!0-9]*) ACTIVE_US=0 ;;
+esac
+
+UPTIME_SECONDS="$(cut -d. -f1 /proc/uptime)"
+if [ "${ACTIVE_US}" -gt 0 ]; then
+    SERVICE_AGE=$((UPTIME_SECONDS - ACTIVE_US / 1000000))
+    if [ "${SERVICE_AGE}" -lt "${MIN_SERVICE_AGE}" ]; then
+        logger -t "${TAG}" "VoHive 刚启动 ${SERVICE_AGE} 秒，跳过重复恢复"
+        exit 0
+    fi
+fi
+
+NOW="$(date +%s)"
+LAST=0
+if [ -r "${STAMP}" ]; then
+    LAST="$(cat "${STAMP}" 2>/dev/null || echo 0)"
+fi
+case "${LAST}" in
+    ''|*[!0-9]*) LAST=0 ;;
+esac
+
+if [ $((NOW - LAST)) -lt "${COOLDOWN_SECONDS}" ]; then
+    logger -t "${TAG}" "仍在冷却时间内，跳过重复恢复"
+    exit 0
+fi
+
+printf '%s\n' "${NOW}" > "${STAMP}"
+logger -t "${TAG}" "检测到 Quectel QMI 设备重新枚举，正在重启 VoHive"
+systemctl restart vohive.service
+logger -t "${TAG}" "VoHive 自动恢复完成"
+RECOVER_SCRIPT
+
+  cat > "${recover_unit_tmp}" <<'RECOVER_UNIT'
+[Unit]
+Description=Recover VoHive after QMI USB re-enumeration
+After=systemd-udevd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/vohive-qmi-recover
+TimeoutStartSec=90
+RECOVER_UNIT
+
+  cat > "${recover_rule_tmp}" <<'RECOVER_RULE'
+# Quectel EC25 2c7c:0125: recover VoHive after the QMI control device returns
+ACTION=="add", SUBSYSTEM=="usbmisc", KERNEL=="cdc-wdm*", ATTRS{idVendor}=="2c7c", ATTRS{idProduct}=="0125", TAG+="systemd", ENV{SYSTEMD_WANTS}+="vohive-qmi-recover.service"
+RECOVER_RULE
+
+  run_root mkdir -p /usr/local/sbin /etc/udev/rules.d
+  run_root install -m 0755 "${recover_script_tmp}" "${QMI_RECOVER_SCRIPT_PATH}"
+  run_root install -m 0644 "${recover_unit_tmp}" "${QMI_RECOVER_SERVICE_PATH}"
+  run_root install -m 0644 "${recover_rule_tmp}" "${QMI_RECOVER_RULE_PATH}"
+  log "已安装 EC25 QMI 重新枚举自动恢复补丁。"
+}
+
 install_systemd() {
   local unit_tmp="${TMP_DIR}/vohive.service"
   cat > "${unit_tmp}" <<UNIT
@@ -380,7 +475,11 @@ LimitNOFILE=1048576
 WantedBy=multi-user.target
 UNIT
   run_root install -m 0644 "${unit_tmp}" "${SERVICE_PATH}"
+  install_qmi_recovery
   run_root systemctl daemon-reload
+  if command -v udevadm >/dev/null 2>&1; then
+    run_root udevadm control --reload-rules
+  fi
   run_root systemctl enable vohive.service
   run_root systemctl restart vohive.service
   if [[ "${DRY_RUN}" == "0" ]] && ! run_root systemctl is-active --quiet vohive.service; then
