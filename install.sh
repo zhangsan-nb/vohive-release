@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# VoHive one-click installer for the maintained forks.
-# Binary lookup order: release repository -> source repository -> local source build.
+# VoHive binary-only installer for archived historical releases.
+# Downloads verified precompiled assets from the release repository.
 RELEASE_REPO="${VOHIVE_RELEASE_REPO:-zhangsan-nb/vohive-release}"
-SOURCE_REPO="${VOHIVE_SOURCE_REPO:-zhangsan-nb/vohive}"
-SOURCE_REF="${VOHIVE_SOURCE_REF:-main}"
+DEFAULT_VERSION="v1.5.5-10-gf9eb85d"
 
 VERSION=""
 NO_SYSTEMD=0
-BINARY_ONLY=0
 FORCE_CONFIG=0
 DRY_RUN=0
 
@@ -35,9 +33,9 @@ err() { printf '[vohive-install] 错误: %s\n' "$*" >&2; }
 usage() {
   cat <<'USAGE'
 用法: install.sh [选项]
-  --version <vX.Y.Z|latest>  安装指定 Release；默认先找 latest，找不到则编译 main
-  --source-ref <分支或标签>  源码编译所用的分支/标签（默认 main）
-  --binary-only             找不到预编译二进制时直接退出，不自动编译
+  --version <版本>          安装指定的已验证预编译版本；默认 v1.5.5-10-gf9eb85d
+  --source-ref <引用>       已弃用；为兼容旧命令而接受，但不会触发源码编译
+  --binary-only             兼容选项；当前安装器始终只使用预编译二进制
   --no-systemd              只安装，不创建或启动 systemd 服务
   --force-config            重建最小配置（会先备份原配置）
   --dry-run                 只显示会执行的本机安装操作
@@ -45,8 +43,6 @@ usage() {
 
 可选环境变量:
   VOHIVE_RELEASE_REPO       默认 zhangsan-nb/vohive-release
-  VOHIVE_SOURCE_REPO        默认 zhangsan-nb/vohive
-  VOHIVE_SOURCE_REF         默认 main
   VOHIVE_ROOT_DIR           默认 /opt/vohive
 USAGE
 }
@@ -100,8 +96,9 @@ parse_args() {
         VERSION="$2"; shift 2 ;;
       --source-ref)
         [[ $# -ge 2 ]] || { err "--source-ref 缺少参数"; exit 1; }
-        SOURCE_REF="$2"; shift 2 ;;
-      --binary-only) BINARY_ONLY=1; shift ;;
+        warn "--source-ref 已弃用，当前安装器不支持源码编译。该参数将被忽略。"
+        shift 2 ;;
+      --binary-only) shift ;; # 兼容选项；当前始终只使用预编译二进制
       --no-systemd) NO_SYSTEMD=1; shift ;;
       --force-config) FORCE_CONFIG=1; shift ;;
       --dry-run) DRY_RUN=1; shift ;;
@@ -118,14 +115,6 @@ detect_arch() {
     armv7|armv7l) printf 'armv7\n' ;;
     *) err "不支持的 CPU 架构: $(uname -m)"; exit 1 ;;
   esac
-}
-
-github_latest_tag() {
-  local repo="$1" json
-  json="$(curl -fsSL --retry 2 --connect-timeout 10 \
-    -H 'Accept: application/vnd.github+json' \
-    "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null || true)"
-  printf '%s' "${json}" | tr -d '\n' | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
 }
 
 is_elf() {
@@ -146,6 +135,13 @@ known_binary_sha256() {
 try_binary() {
   local repo="$1" tag="$2" arch="$3" output="$4"
   local asset="vohive_${tag}_linux_${arch}" expected actual
+
+  expected="$(known_binary_sha256 "${tag}" "${arch}" 2>/dev/null || true)"
+  if [[ -z "${expected}" ]]; then
+    warn "版本 ${tag} / 架构 ${arch} 没有已知 SHA-256，拒绝安装未经验证的资产"
+    return 1
+  fi
+
   local url="https://github.com/${repo}/releases/download/${tag}/${asset}"
   log "尝试预编译二进制: ${repo} / ${tag} / ${arch}"
   if ! curl -fL --retry 2 --connect-timeout 15 --progress-bar "${url}" -o "${output}"; then
@@ -157,173 +153,30 @@ try_binary() {
     rm -f "${output}"
     return 1
   fi
-  expected="$(known_binary_sha256 "${tag}" "${arch}" 2>/dev/null || true)"
-  if [[ -n "${expected}" ]]; then
-    actual="$(sha256sum "${output}" | awk '{print $1}')"
-    if [[ "${actual}" != "${expected}" ]]; then
-      warn "二进制 SHA-256 校验失败，拒绝安装: ${asset}"
-      rm -f "${output}"
-      return 1
-    fi
-    log "SHA-256 校验通过: ${asset}"
+  actual="$(sha256sum "${output}" | awk '{print $1}')"
+  if [[ "${actual}" != "${expected}" ]]; then
+    warn "二进制 SHA-256 校验失败，拒绝安装: ${asset}"
+    rm -f "${output}"
+    return 1
   fi
+  log "SHA-256 校验通过: ${asset}"
   chmod 0755 "${output}"
   return 0
 }
 
 download_binary() {
-  local arch="$1" output="$2" tag="${VERSION}" repo candidate
-  local -a repos=("${RELEASE_REPO}" "${SOURCE_REPO}")
+  local arch="$1" output="$2" tag="${VERSION}"
 
-  if [[ -n "${tag}" && "${tag}" != "latest" && "${tag}" != "stable" ]]; then
-    for repo in "${repos[@]}"; do
-      if try_binary "${repo}" "${tag}" "${arch}" "${output}"; then
-        printf '%s\n' "${tag}" > "${TMP_DIR}/installed-version"
-        return 0
-      fi
-    done
-    return 1
+  if [[ -z "${tag}" || "${tag}" == "latest" || "${tag}" == "stable" ]]; then
+    tag="${DEFAULT_VERSION}"
+    log "未指定版本，使用默认预编译版本: ${tag}"
   fi
 
-  for repo in "${repos[@]}"; do
-    candidate="$(github_latest_tag "${repo}")"
-    [[ -n "${candidate}" ]] || continue
-    if try_binary "${repo}" "${candidate}" "${arch}" "${output}"; then
-      printf '%s\n' "${candidate}" > "${TMP_DIR}/installed-version"
-      return 0
-    fi
-  done
+  if try_binary "${RELEASE_REPO}" "${tag}" "${arch}" "${output}"; then
+    printf '%s\n' "${tag}" > "${TMP_DIR}/installed-version"
+    return 0
+  fi
   return 1
-}
-
-install_build_dependencies() {
-  local -a missing=()
-  local cmd
-  for cmd in git sha256sum tar; do
-    command -v "${cmd}" >/dev/null 2>&1 || missing+=("${cmd}")
-  done
-  [[ ${#missing[@]} -gt 0 ]] || return 0
-
-  if command -v apt-get >/dev/null 2>&1; then
-    log "安装源码编译依赖（仅缺少时安装）: git ca-certificates coreutils tar"
-    run_root apt-get update
-    run_root env DEBIAN_FRONTEND=noninteractive apt-get install -y git ca-certificates coreutils tar
-  else
-    err "没有找到 apt-get。源码自动编译目前支持 Debian/Ubuntu；也可先发布二进制后使用 --binary-only。"
-    exit 1
-  fi
-}
-
-version_ge() {
-  local current="$1" required="$2"
-  [[ "$(printf '%s\n%s\n' "${required}" "${current}" | sort -V | head -n1)" == "${required}" ]]
-}
-
-prepare_go() {
-  local required="$1" arch="$2" go_arch current archive checksum expected actual
-  if command -v go >/dev/null 2>&1; then
-    current="$(go env GOVERSION 2>/dev/null | sed 's/^go//' || true)"
-    if [[ -n "${current}" ]] && version_ge "${current}" "1.21"; then
-      command -v go
-      return 0
-    fi
-  fi
-
-  case "${arch}" in
-    amd64) go_arch="amd64" ;;
-    arm64) go_arch="arm64" ;;
-    armv7) go_arch="armv6l" ;;
-  esac
-  archive="${TMP_DIR}/go.tar.gz"
-  checksum="${archive}.sha256"
-  log "准备临时 Go ${required} 编译环境" >&2
-  curl -fL --retry 2 "https://go.dev/dl/go${required}.linux-${go_arch}.tar.gz" -o "${archive}"
-  curl -fsSL --retry 2 "https://go.dev/dl/go${required}.linux-${go_arch}.tar.gz.sha256" -o "${checksum}"
-  expected="$(tr -d '[:space:]' < "${checksum}")"
-  actual="$(sha256sum "${archive}" | awk '{print $1}')"
-  [[ -n "${expected}" && "${expected}" == "${actual}" ]] || {
-    err "Go 工具链 SHA-256 校验失败"; exit 1;
-  }
-  mkdir -p "${TMP_DIR}/go-toolchain"
-  tar -xzf "${archive}" -C "${TMP_DIR}/go-toolchain"
-  printf '%s\n' "${TMP_DIR}/go-toolchain/go/bin/go"
-}
-
-prepare_node() {
-  local arch="$1" required="${VOHIVE_NODE_VERSION:-20.19.5}" node_arch current archive sums expected actual topdir
-  if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
-    current="$(node --version 2>/dev/null | sed 's/^v//' || true)"
-    if [[ -n "${current}" ]] && version_ge "${current}" "18.0.0"; then
-      dirname "$(command -v node)"
-      return 0
-    fi
-  fi
-
-  case "${arch}" in
-    amd64) node_arch="x64" ;;
-    arm64) node_arch="arm64" ;;
-    armv7) node_arch="armv7l" ;;
-  esac
-  archive="${TMP_DIR}/node.tar.gz"
-  sums="${TMP_DIR}/node-SHASUMS256.txt"
-  topdir="node-v${required}-linux-${node_arch}"
-  log "准备临时 Node.js ${required} 编译环境" >&2
-  curl -fL --retry 2 "https://nodejs.org/dist/v${required}/${topdir}.tar.gz" -o "${archive}"
-  curl -fsSL --retry 2 "https://nodejs.org/dist/v${required}/SHASUMS256.txt" -o "${sums}"
-  expected="$(awk -v f="${topdir}.tar.gz" '$2 == f {print $1; exit}' "${sums}")"
-  actual="$(sha256sum "${archive}" | awk '{print $1}')"
-  [[ -n "${expected}" && "${expected}" == "${actual}" ]] || {
-    err "Node.js 工具链 SHA-256 校验失败"; exit 1;
-  }
-  mkdir -p "${TMP_DIR}/node-toolchain"
-  tar -xzf "${archive}" -C "${TMP_DIR}/node-toolchain" --strip-components=1
-  printf '%s\n' "${TMP_DIR}/node-toolchain/bin"
-}
-
-build_from_source() {
-  local arch="$1" output="$2" ref="${SOURCE_REF}" source_dir go_required go_cmd node_bin goarch goarm="" build_version
-
-  if [[ -n "${VERSION}" && "${VERSION}" != "latest" && "${VERSION}" != "stable" && "${SOURCE_REF}" == "main" ]]; then
-    ref="${VERSION}"
-  fi
-
-  install_build_dependencies
-  source_dir="${TMP_DIR}/source"
-  log "未找到可用二进制，开始从 ${SOURCE_REPO}@${ref} 编译（首次通常需要数分钟）"
-  if ! git clone --depth 1 --branch "${ref}" "https://github.com/${SOURCE_REPO}.git" "${source_dir}"; then
-    err "无法取得源码分支/标签 ${SOURCE_REPO}@${ref}"
-    exit 1
-  fi
-
-  go_required="$(awk '$1 == "go" {print $2; exit}' "${source_dir}/go.mod")"
-  [[ -n "${go_required}" ]] || { err "go.mod 中没有 Go 版本"; exit 1; }
-  go_cmd="$(prepare_go "${go_required}" "${arch}")"
-  node_bin="$(prepare_node "${arch}")"
-
-  log "构建 Web 前端"
-  PATH="${node_bin}:${PATH}" npm ci --prefix "${source_dir}/web"
-  PATH="${node_bin}:${PATH}" npm run build --prefix "${source_dir}/web"
-  rm -rf "${source_dir}/internal/web/dist"
-  mkdir -p "${source_dir}/internal/web"
-  cp -R "${source_dir}/web/dist" "${source_dir}/internal/web/dist"
-
-  case "${arch}" in
-    amd64) goarch="amd64" ;;
-    arm64) goarch="arm64" ;;
-    armv7) goarch="arm"; goarm="7" ;;
-  esac
-  build_version="$(git -C "${source_dir}" describe --tags --always 2>/dev/null || git -C "${source_dir}" rev-parse --short HEAD)"
-  log "构建 VoHive ${build_version} (${arch})"
-  (
-    cd "${source_dir}"
-    GOWORK=off GOTOOLCHAIN=auto CGO_ENABLED=0 GOOS=linux GOARCH="${goarch}" GOARM="${goarm}" \
-      "${go_cmd}" build -trimpath -buildvcs=false -tags "with_utls nomsgpack" \
-      -ldflags "-s -w -X 'github.com/iniwex5/vohive/internal/global.Version=${build_version}' -X 'github.com/iniwex5/vohive/internal/global.BuildTime=$(date -u +'%Y-%m-%dT%H:%M:%SZ')'" \
-      -o "${output}" ./cmd/vohive
-  )
-  is_elf "${output}" || { err "源码编译结果不是有效 ELF 二进制"; exit 1; }
-  chmod 0755 "${output}"
-  printf '%s\n' "${build_version} (source:${ref})" > "${TMP_DIR}/installed-version"
 }
 
 random_password() {
@@ -537,11 +390,11 @@ main() {
   candidate="${TMP_DIR}/vohive"
 
   if ! download_binary "${arch}" "${candidate}"; then
-    if [[ "${BINARY_ONLY}" == "1" ]]; then
-      err "你的两个 fork 目前没有可用 Release 二进制。请去掉 --binary-only 允许自动源码编译。"
-      exit 1
-    fi
-    build_from_source "${arch}" "${candidate}"
+    err "未找到可用预编译二进制（架构: ${arch}）。"
+    err "当前仅分发原作者遗留的历史预编译二进制 v1.5.5-10-gf9eb85d。"
+    err "由于关键依赖不可公开获取，无法从源码自动编译。"
+    err "请确认已发布 Release 资产后重试，或联系仓库维护者。"
+    exit 1
   fi
 
   install_config
