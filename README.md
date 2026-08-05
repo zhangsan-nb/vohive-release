@@ -1,9 +1,17 @@
-# VoHive Release
+# VoHive 历史预编译二进制归档与一键部署教程
 
-公开分发仓库：提供二进制发布资产、安装脚本和运维文档。
+> [!NOTE]
+> **本仓库定位：原作者遗留的历史预编译二进制归档，配套一键部署、Docker 构建和运维文档。**
 
-# 项目源码（当前维护 Fork）
-https://github.com/zhangsan-nb/vohive
+当前分发的二进制版本为 **`v1.5.5-10-gf9eb85d`**，是本仓库目前归档的 Linux 三架构（amd64 / arm64 / armv7）历史预编译产物。本仓库未对这些二进制进行修改或重新编译。
+
+## 关于源码
+
+由于关键私有依赖 `github.com/iniwex5/vowifi-go@v1.1.2` 不可公开获取，当前无法从任何公开源码（包括维护 fork 和只读归档）完整复现该二进制。
+
+以下源码仓库仅作为**历史参考**：
+- 维护 fork：https://github.com/zhangsan-nb/vohive
+- 只读归档：https://github.com/zhangsan-nb/vohive-6mb-archive-20260702-114855
 
 ## 免责声明
 
@@ -98,7 +106,7 @@ apt-get install -y curl ca-certificates
 ```bash
 curl -fsSL \
   https://raw.githubusercontent.com/zhangsan-nb/vohive-release/master/install.sh \
-  | bash
+  | bash -s -- --version v1.5.5-10-gf9eb85d --binary-only
 ```
 
 ### 4.2 Debian / Ubuntu：普通用户安装
@@ -115,7 +123,7 @@ sudo apt-get install -y curl ca-certificates
 ```bash
 curl -fsSL \
   https://raw.githubusercontent.com/zhangsan-nb/vohive-release/master/install.sh \
-  | sudo bash
+  | sudo bash -s -- --version v1.5.5-10-gf9eb85d --binary-only
 ```
 
 ### 4.3 安装指定版本
@@ -125,7 +133,7 @@ root 用户执行：
 ```bash
 curl -fsSL \
   https://raw.githubusercontent.com/zhangsan-nb/vohive-release/master/install.sh \
-  | bash -s -- --version v1.5.5-10-gf9eb85d
+  | bash -s -- --version v1.5.5-10-gf9eb85d --binary-only
 ```
 
 ### 4.4 安装完成后检查
@@ -190,7 +198,7 @@ test -e /opt/vohive \
 ```bash
 curl -fsSL \
   https://raw.githubusercontent.com/zhangsan-nb/vohive-release/master/install.sh \
-  | bash -s -- --no-systemd
+  | bash -s -- --version v1.5.5-10-gf9eb85d --binary-only --no-systemd
 ```
 
 ## 默认安装目录（便携部署）
